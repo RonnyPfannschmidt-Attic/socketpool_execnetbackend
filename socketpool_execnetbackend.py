@@ -1,5 +1,7 @@
 
 
+import socket
+import threading
 
 def socketmap(*args):
     """
@@ -18,22 +20,19 @@ def socketmap(*args):
 
 class ExecnetBackend(object):
 
-    import select
-    import socket
-    import threading
-    import time
-    try:
-        import Queue as queue
-    except ImportError: # py3
-        import queue
-    sleep = staticmethod(time.sleep)
-    Semaphore = threading.BoundedSemaphore
-
+    
 
     def __init__(self, gw):
         self.gw = gw
         import sys
         self.chan = gw.remote_exec(sys.modules[__name__])
+
+        import socketpool.backend_thread as t
+        self.t = t
+
+    def __getattr__(self, name):
+        print self, name
+        return getattr(self.t, name)
 
     def Socket(self, *k, **kw):
         self.chan.send(('new', k, kw))
@@ -41,7 +40,7 @@ class ExecnetBackend(object):
 
     def Select(self, r, w, x, **kw):
         args, reverse = socketmap(r, w, x)
-        self.chan.send(('select', args, **kw))
+        self.chan.send(('select', args, kw))
         wait = self.chan.receive()
         results = wait.receive()
         return [reverse(x) for x in results]
@@ -70,9 +69,10 @@ def remote_socket_control(chan):
             socket.close()
             del sockets[chan]
             del channels[socket]
-        method, args, kwargs = args
-        result =getattr(socket,method)(*args, **kwargs)
-        chan.send(result)
+        else:
+            method, args, kwargs = args
+            result =getattr(socket,method)(*args, **kwargs)
+            chan.send(result)
 
     chan.setcallback(socket_data_callback, endmarker=closed)
 
@@ -91,8 +91,6 @@ def do_select(chan, lists, **kw):
 
 
 
-import socket
-import threading
 
 if __name__ == '__channelexec__':
     sockets = {}
@@ -105,7 +103,7 @@ if __name__ == '__channelexec__':
             sockets[chan] = s
             channels[s] = chan
             remote_socket_control(chan)
-        elif command = 'select':
+        elif command == 'select':
             thread = threading.Thread(target=do_select, args=(chan, args), kwargs=kw)
             thread.start()
         channel.send(chan)
