@@ -1,5 +1,5 @@
 
-
+import select
 import socket
 import threading
 
@@ -18,9 +18,19 @@ def socketmap(*args):
         result.append(arglist)
     return result, mapping.get
 
-class ExecnetBackend(object):
 
-    
+
+
+def connector_type():
+    import restkit.conn
+    class Conn(restkit.conn.Connection):
+        def is_connected(self):
+            r, _, _ = self.backend_mod.Select([self._s], [], [], timeout=0)
+            return not r
+    return Conn
+
+
+class ExecnetBackend(object):
 
     def __init__(self, gw):
         self.gw = gw
@@ -42,7 +52,10 @@ class ExecnetBackend(object):
         self.chan.send(('select', args, kw))
         wait = self.chan.receive()
         results = wait.receive()
-        return [reverse(x) for x in results]
+        returns = []
+        for res in results:
+            returns.append([reverse(x) for x in res])
+        return returns
 
 
 
@@ -70,6 +83,7 @@ def remote_socket_control(chan):
             del channels[socket]
         else:
             method, args, kwargs = args
+            chan.gateway._trace("socket call", socket, method, args, kwargs)
             result =getattr(socket,method)(*args, **kwargs)
             chan.send(result)
 
@@ -82,10 +96,17 @@ def do_select(chan, lists, **kw):
     args = []
     for list in lists:
         args.append([sockets[x] for x in list])
-    results = select(*args, **kw)
+    if 'timeout' in kw:
+        args.append(kw.get('timeout'))
+    try:
+        results = select.select(*args)
+    except:
+        #XXX: error
+        chan.send(([],[],[]))
+        return
     send = []
     for res in results:
-        sent.append([channels[s] for s in res])
+        send.append([channels[s] for s in res])
     chan.send(send)
 
 
