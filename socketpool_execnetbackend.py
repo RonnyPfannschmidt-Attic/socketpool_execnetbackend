@@ -1,7 +1,8 @@
-
 import select
 import socket
 import threading
+DEBUG=0
+
 
 def socketmap(*args):
     """
@@ -25,8 +26,7 @@ def connector_type():
     import restkit.conn
     class Conn(restkit.conn.Connection):
         def is_connected(self):
-            r, _, _ = self.backend_mod.Select([self._s], [], [], timeout=0)
-            return not r
+            return self._s.is_connected()
     return Conn
 
 
@@ -36,7 +36,9 @@ class ExecnetBackend(object):
         self.gw = gw
         import sys
         self.chan = gw.remote_exec(sys.modules[__name__])
-
+        self.debug_chan = gw.newchannel()
+        self.chan.send(self.debug_chan)
+        self.debug_chan.setcallback(do_debug)
         import socketpool.backend_thread as t
         self.t = t
 
@@ -66,10 +68,17 @@ class RemoteSocket(object):
 
     def __getattr__(self, methodname):
         def standin(*k, **kw):
+            debug('call', methodname, k, kw)
             self.chan.send((methodname, k, kw))
             return self.chan.receive()
         standin.__name__ = methodname
         return standin
+
+    def recv_into(self, buffer):
+        data = self.recv(len(buffer))
+        buffer[:len(data)] = data
+        debug('recv_into', data)
+        return len(data)
 
 
 closed = object()
@@ -84,7 +93,15 @@ def remote_socket_control(chan):
         else:
             method, args, kwargs = args
             chan.gateway._trace("socket call", socket, method, args, kwargs)
-            result =getattr(socket,method)(*args, **kwargs)
+            if method == 'is_connected':
+                try:
+                    r, _, _ = select.select([socket], [], [], 0)
+                except:
+                    result = False
+                else:
+                    result = not r
+            else:
+                result =getattr(socket,method)(*args, **kwargs)
             chan.send(result)
 
     chan.setcallback(socket_data_callback, endmarker=closed)
@@ -93,29 +110,43 @@ def remote_socket_control(chan):
 
 
 def do_select(chan, lists, **kw):
+    debug("select", chan, lists, kw)
     args = []
-    for list in lists:
-        args.append([sockets[x] for x in list])
-    if 'timeout' in kw:
-        args.append(kw.get('timeout'))
     try:
+        for list in lists:
+            args.append([sockets[x] for x in list])
+        if 'timeout' in kw:
+            args.append(kw.get('timeout'))
+        else:
+            args.append(.5)
         results = select.select(*args)
-    except:
+    except Exception as e:
+        debug(str(e))
         #XXX: error
         chan.send(([],[],[]))
-        return
-    send = []
-    for res in results:
-        send.append([channels[s] for s in res])
-    chan.send(send)
+    else:
+        debug('result', results)
+        send = []
+        for res in results:
+            send.append([channels[s] for s in res])
+        chan.send(send)
 
 
 
+def do_debug(args):
+    if DEBUG:
+        args = [str(x) for x in args]
+        print ' '.join(args)
+
+def debug(*k):
+    do_debug(k)
 
 if __name__ == '__channelexec__':
     sockets = {}
     channels = {}
-
+    debug_chan = channel.receive()
+    def debug(*k):
+        debug_chan.send(k)
     for command, args, kw in channel:
         chan = channel.gateway.newchannel()
         if command == 'new':
