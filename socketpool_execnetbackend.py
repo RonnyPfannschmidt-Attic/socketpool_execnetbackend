@@ -31,7 +31,6 @@ class ExecnetBackend(object):
         self.t = t
 
     def __getattr__(self, name):
-        print self, name
         return getattr(self.t, name)
 
     def Socket(self, *k, **kw):
