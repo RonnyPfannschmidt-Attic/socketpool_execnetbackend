@@ -1,22 +1,31 @@
-
+import sys
+import argparse
 import execnet
 import socketpool.pool
-import couchdbkit
 import socketpool_execnetbackend
+import couchdbkit
 
-gw = execnet.makegateway()
+parser = argparse.ArgumentParser()
+parser.add_argument('gateway')
+parser.add_argument('server', default=None)
 
+opts = parser.parse_args()
+
+print 'making gateway'
+gw = execnet.makegateway(opts.gateway)
+
+print 'making backend'
 backend = socketpool_execnetbackend.ExecnetBackend(gw)
-import sys
 sys.modules['socketpool.backend_execnet'] = backend
 
-
+print 'making pool'
 pool = socketpool.ConnectionPool(
     socketpool_execnetbackend.connector_type(),
     backend='execnet' )
 
-server = couchdbkit.Server(pool=pool)
+print 'making server'
+server = couchdbkit.Server(opts.server, pool=pool)
 
-
+print 'info'
 print server.info()
 print server.all_dbs()
