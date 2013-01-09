@@ -1,4 +1,3 @@
-import sys
 import argparse
 import execnet
 import socketpool.pool
@@ -16,12 +15,11 @@ gw = execnet.makegateway(opts.gateway)
 
 print 'making backend'
 backend = socketpool_execnetbackend.ExecnetBackend(gw)
-sys.modules['socketpool.backend_execnet'] = backend
 
 print 'making pool'
 pool = socketpool.ConnectionPool(
     socketpool_execnetbackend.connector_type(),
-    backend='execnet' )
+    backend=backend)
 
 print 'making server'
 server = couchdbkit.Server(opts.server, pool=pool)
